@@ -1,4 +1,6 @@
+# -*- coding: utf-8 -*-
 import json
+import platform
 import re
 import time
 import requests
@@ -13,13 +15,16 @@ import logging
 
 USERNAME = "201620010022"
 PASSWORD = "zhiyou123."
+SLEEP_TIME = 60
+VERIFY_CODE_LOCATION = (702, 785, 900, 877)
 
 
-class student:
-    def __init__(self, username, password, name):
+class Student:
+    def __init__(self, username, password, name, fangtang="SCU142595Td1df92c3e6709f63b1f8fb38b3c581355fed676e8b478"):
         self.username = username
         self.password = password
         self.name = name
+        self.fangtang = fangtang
 
 
 class course:
@@ -33,16 +38,15 @@ class course:
 
 class YjsWebsite:
 
-    def __init__(self, username, password):
-        self._username = username
-        self._password = password
+    def __init__(self, student):
+        self._student = student
         self._driver = webdriver.Chrome()
         self._driver.minimize_window()
         self._cookies = None
         self.course_name_list = []
 
     def get_cookie(self):
-        logging.info("[%s]:Start to get cookie", self._username)
+        logging.info("[%s]:Start to get cookie", self._student.username)
 
         self._login_success = False
         while not self._login_success:
@@ -52,27 +56,27 @@ class YjsWebsite:
                     EC.presence_of_element_located((By.XPATH, '/html/body/div[2]/div/div[1]/div[1]/img')))
                 self._login_success = True
             except:
-                logging.warning("[%s]:Error login due to wrong verify code", self._username)
+                logging.warning("[%s]:Error login due to wrong verify code", self._student.username)
         self._cookies = self._driver.get_cookies()
         self._SINDEXCOOKIE = self._cookies[0]["value"]
         self._ASP_NET_SessionId = self._cookies[2]["value"]
-        logging.info("[%s]:Get cookie success __SINDEXCOOKIE__:%s; ASP.NET_SessionId:%s;", self._username,
+        logging.info("[%s]:Get cookie success __SINDEXCOOKIE__:%s; ASP.NET_SessionId:%s;", self._student.username,
                      self._SINDEXCOOKIE,
                      self._ASP_NET_SessionId)
 
     def login(self):
-        logging.info("[%s]:Start to login by selenium", self._username)
+        logging.info("[%s]:Start to login by selenium", self._student.username)
         self._driver.get("http://yjss.hhu.edu.cn/gmis/home/stulogin")
 
         img_verify_locator = (By.XPATH, '//*[@id="imgVerifi"]')
         WebDriverWait(self._driver, 1).until(EC.visibility_of_element_located(img_verify_locator))
 
-        self._driver.find_element_by_xpath('//*[@id="UserId"]').send_keys(USERNAME)
-        self._driver.find_element_by_xpath('//*[@id="Password"]').send_keys(PASSWORD)
+        self._driver.find_element_by_xpath('//*[@id="UserId"]').send_keys(self._student.username)
+        self._driver.find_element_by_xpath('//*[@id="Password"]').send_keys(self._student.password)
         self._driver.get_screenshot_as_file('screenshot.png')
 
         im = Image.open('screenshot.png')
-        im = im.crop((702, 785, 900, 877))
+        im = im.crop(VERIFY_CODE_LOCATION)
         verify_code = identify_verify_code(im)
 
         self._driver.find_element_by_xpath('//*[@id="VeriCode"]').send_keys(verify_code)
@@ -82,9 +86,10 @@ class YjsWebsite:
         self._driver.quit()
 
     def check_score(self):
-        logging.info("[%s]:Start to check score", self._username)
         while self._cookies == None:
             self.get_cookie()
+        logging.info("[%s]:Start to check score", self._student.username)
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36",
             "Cookie": ".ASPXAUTH=616DDDD143E457FBB177243539A3FE9F56A57CD70D5D4E6871971442CD1F6003760DBA8895EF5EFE3EE9C0A3A8DC9FE2FA2F742441AD0B7F1A2B1A7D1FCFFD7EAF67DF37C540F14F7F80BBD1AF333B582ACC1FC3BCC6248A4F8ACA79DD992C28C422A2114AD47A8C2008E9CEF1B3DD0A8DEE074801075342DE113A3F68D0367D5447DFC20C46158E35F6954B16EBCDDE981E20727B67A41FD193A9DF520958AD593FFA373E01B2DED41D9E6F98AC8CAC73C06AB3CC2FE811A3CC5CBECB30EF43BE21A096F874DB3F2D1A81240C115A00; "
@@ -95,21 +100,20 @@ class YjsWebsite:
         url = 'http://yjss.hhu.edu.cn/gmis/student/pygl/cxhkbksq_list'
         new_score_flag = False
         try:
-            logging.info("[%s]:Return json info %s", self._username,
-                         str(json.loads(requests.get(url=url, headers=headers).text)))
+            # logging.info("[%s]:Return json info %s", self._student.username,
+            #              str(json.loads(requests.get(url=url, headers=headers).text)))
             scores = json.loads(requests.get(url=url, headers=headers).text)['cj']
             for score in scores:
                 if score['cj'] != "无" and score['kcmc'] not in self.course_name_list:
                     self.course_name_list.append(score['kcmc'])
-                    logging.info("[%s]:Query new course %s", self._username,
-                                 "李凡：" + str(course(score['kcmc'], score['cj'])))
+                    logging.info("[%s]:Query new course", self._student.username)
                     send2wx("李凡：" + str(course(score['kcmc'], score['cj'])),
                             "李凡：" + str(course(score['kcmc'], score['cj'])))
                     new_score_flag = True
             if not new_score_flag:
-                logging.info("[%s]:None new course")
+                logging.info("[%s]:None new course", self._student.username)
         except Exception as e:
-            logging.error("[%s]:Cookie lose effectiveness", self._username)
+            logging.error("[%s]:Cookie lose effectiveness", self._student.username)
             self._cookies = None
 
 
@@ -130,17 +134,27 @@ def identify_verify_code(image):
     return code
 
 
-def send2wx(text, msg):
-    url = "https://sc.ftqq.com/SCU142595Td1df92c3e6709f63b1f8fb38b3c581355fed676e8b478.send?text=" + text + "&desp=" + msg
-    requests.get(url=url)
+def send2wx(text, msg, fangtang="SCU142595Td1df92c3e6709f63b1f8fb38b3c581355fed676e8b478"):
+    url = "https://sc.ftqq.com/" + fangtang + ".send?text=" + text + "&desp=" + msg
+    res_text = requests.get(url=url).text
+    res = json.loads(res_text)
+    if res['errmsg'] == "success":
+        logging.info(":Send to weixin success!")
+    else:
+        logging.error(":Send to weixin error, try again after 2 seconds:" + res_text)
+        time.sleep(2)
+        send2wx("Re:"+text, msg, fangtang)
 
 
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - [%(funcName)s] - %(levelname)s- %(message)s')  # logging.basic
-yjs_website = YjsWebsite(USERNAME, PASSWORD)
+yjs_website = YjsWebsite(Student(USERNAME, PASSWORD, '李凡'))
 while True:
     yjs_website.check_score()
-    time.sleep(60)
+    time.sleep(SLEEP_TIME)
+    logging.info("[System]:Start to sleep %d seconds", SLEEP_TIME)
 yjs_website.quit()
 
 # # option = webdriver.ChromeOptions()
