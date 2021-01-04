@@ -12,15 +12,15 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import logging
+import threading
 
-USERNAME = "201620010022"
-PASSWORD = "zhiyou123."
 SLEEP_TIME = 60
+# 通过第一次运行生成的screenshot.png截图 手动获取验证码的位置(左，顶，右，底)
 VERIFY_CODE_LOCATION = (702, 785, 900, 877)
 
 
 class Student:
-    def __init__(self, username, password, name, fangtang="SCU142595Td1df92c3e6709f63b1f8fb38b3c581355fed676e8b478"):
+    def __init__(self, username, password, name, fangtang):
         self.username = username
         self.password = password
         self.name = name
@@ -107,8 +107,8 @@ class YjsWebsite:
                 if score['cj'] != "无" and score['kcmc'] not in self.course_name_list:
                     self.course_name_list.append(score['kcmc'])
                     logging.info("[%s]:Query new course", self._student.username)
-                    send2wx("李凡：" + str(course(score['kcmc'], score['cj'])),
-                            "李凡：" + str(course(score['kcmc'], score['cj'])))
+                    send2wx(self._student.name + str(course(score['kcmc'], score['cj'])),
+                            self._student.name + str(course(score['kcmc'], score['cj'])))
                     new_score_flag = True
             if not new_score_flag:
                 logging.info("[%s]:None new course", self._student.username)
@@ -134,7 +134,7 @@ def identify_verify_code(image):
     return code
 
 
-def send2wx(text, msg, fangtang="SCU142595Td1df92c3e6709f63b1f8fb38b3c581355fed676e8b478"):
+def send2wx(text, msg, fangtang):
     url = "https://sc.ftqq.com/" + fangtang + ".send?text=" + text + "&desp=" + msg
     res_text = requests.get(url=url).text
     res = json.loads(res_text)
@@ -143,69 +143,43 @@ def send2wx(text, msg, fangtang="SCU142595Td1df92c3e6709f63b1f8fb38b3c581355fed6
     else:
         logging.error(":Send to weixin error, try again after 2 seconds:" + res_text)
         time.sleep(2)
-        send2wx("Re:"+text, msg, fangtang)
+        send2wx("Re:" + text, msg, fangtang)
+
+
+def loop_check_score(student):
+    yjs_website = YjsWebsite(student)
+    while True:
+        yjs_website.check_score()
+        time.sleep(SLEEP_TIME)
+        logging.info("[System]:Start to sleep %d seconds", SLEEP_TIME)
+    yjs_website.quit()
+
+
+def loop_check_thread_alive():
+    while True:
+        for student in students:
+            if not student[1].isAlive():
+                thread = threading.Thread(target=loop_check_score, args=(student,))
+                thread.start()
+                student[1] = thread
+                logging.warning("[Check Alive Thread]:%s loss, restart success", str(student[0]))
+
+        logging.info("[Check Alive Thread]:Start to  check threads")
+        time.sleep(SLEEP_TIME)
 
 
 if platform.system() == "Windows":
+    # pytesseract exe文件目录 用于识别二维码
     pytesseract.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - [%(funcName)s] - %(levelname)s- %(message)s')  # logging.basic
-yjs_website = YjsWebsite(Student(USERNAME, PASSWORD, '李凡'))
-while True:
-    yjs_website.check_score()
-    time.sleep(SLEEP_TIME)
-    logging.info("[System]:Start to sleep %d seconds", SLEEP_TIME)
-yjs_website.quit()
+# Student(学号，密码，姓名，Server酱 Sckey 用于推送微信)
+students = [[Student("20162001xxxx", "xxxxx", 'xx',"xxx"), None]]
 
-# # option = webdriver.ChromeOptions()
-# # option.add_argument('headless')  # 设置option
-# driver = webdriver.Chrome()
-# driver.get("http://yjss.hhu.edu.cn/gmis/home/stulogin")
-#
-# img_verify_locator = (By.XPATH, '//*[@id="imgVerifi"]')
-# WebDriverWait(driver, 1).until(EC.visibility_of_element_located(img_verify_locator))
-#
-# driver.find_element_by_xpath('//*[@id="UserId"]').send_keys(USERNAME)
-# driver.find_element_by_xpath('//*[@id="Password"]').send_keys(PASSWORD)
-# driver.get_screenshot_as_file('screenshot.png')
-#
-# im = Image.open('screenshot.png')
-# im = im.crop((702, 785, 900, 877))
-# # im.save('code.png')
-# verify_code = identify_verify_code(im)
-# driver.find_element_by_xpath('//*[@id="VeriCode"]').send_keys(verify_code)
-# driver.find_element_by_xpath('//*[@id="ff"]/div/div[1]/div[5]/button').click()
-#
-# try:
-#     element = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.XPATH, '//*[@id="xslb"]')))
-# except:
-#     print("can't find that")
-# finally:
-#     driver.quit()
-# # driver.quit()
-
-
-# def check_score():
-#     headers = {
-#         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_0_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36",
-#         "Cookie": ".ASPXAUTH=616DDDD143E457FBB177243539A3FE9F56A57CD70D5D4E6871971442CD1F6003760DBA8895EF5EFE3EE9C0A3A8DC9FE2FA2F742441AD0B7F1A2B1A7D1FCFFD7EAF67DF37C540F14F7F80BBD1AF333B582ACC1FC3BCC6248A4F8ACA79DD992C28C422A2114AD47A8C2008E9CEF1B3DD0A8DEE074801075342DE113A3F68D0367D5447DFC20C46158E35F6954B16EBCDDE981E20727B67A41FD193A9DF520958AD593FFA373E01B2DED41D9E6F98AC8CAC73C06AB3CC2FE811A3CC5CBECB30EF43BE21A096F874DB3F2D1A81240C115A00; __SINDEXCOOKIE__=e9f308be3711df8208a453f3ca5e999c; ASP.NET_SessionId=zrxadadl3zh4o1hud4rerxa4; __LOGINCOOKIE__="
-#
-#     }
-#     while True:
-#         print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + "开始查成绩")
-#         url = 'http://yjss.hhu.edu.cn/gmis/student/pygl/cxhkbksq_list'
-#         print(requests.get(url=url, headers=headers).text)
-#
-#         try:
-#             print(json.loads(requests.get(url=url, headers=headers).text))
-#             scores = json.loads(requests.get(url=url, headers=headers).text)['cj']
-#             course_name_list = []
-#
-#             for score in scores:
-#                 if score['cj'] != "无" and score['kcmc'] not in course_name_list:
-#                     course_name_list.append(score['kcmc'])
-#                     # send2wx("李凡：" + str(course(score['kcmc'], score['cj'])), str(course(score['kcmc'], score['cj'])))
-#         except Exception as e:
-#             # send2wx("爬虫挂了！", str(e))
-#             exit()
-#         # time.sleep(60)
+for student in students:
+    thread = threading.Thread(target=loop_check_score, args=(student[0],))
+    thread.start()
+    student[1] = thread
+check_alive_thread = threading.Thread(target=loop_check_thread_alive, args=())
+check_alive_thread.start()
