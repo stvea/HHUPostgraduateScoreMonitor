@@ -1,4 +1,4 @@
-# HHU_YjsScoreMonitor
+# HHU Postgraduate Score Monitor 河海大学研究生成绩监控器
 ## 简介
 自动登陆[河海大学研究生教学管理系统](http://yjss.hhu.edu.cn/gmis/home/stulogin)查询成绩，并通过[Server酱](http://sc.ftqq.com/)推送至微信微信;本系统采用多线程机制，可以查询多位用户成绩，并设置守护线程自动重启挂掉的进程。
 
